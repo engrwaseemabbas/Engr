@@ -1,0 +1,45 @@
+WITH ac as(
+select ROWNUM SEQ,c.id code,C.COA_PARENT_ID ac_parent_id,coa_account_no ac_no,coa_name ac_name,CC.TITLE comp_name,coa_level ac_level
+from  coa c,company cc
+where C.COMP_ID=cc.id
+      and c.status=1
+            and coa_level>=1
+start with COA_parent_id is null--code=ac_parent_id
+connect by prior C.ID=COA_parent_id
+order siblings by code 
+),
+ACTIVITY AS( 
+select COA_ACCOUNT_NO, COA_NAME, sum(OPEN_DR) OPEN_DR, sum(OPEN_CR) OPEN_CR, sum(act_DR) act_DR, sum(Act_CR) Act_CR
+from(
+select  COA_ACCOUNT_NO,COA_NAME,0 open_dr,0 open_cr,
+                   SUM(NVL(vv.DR,0)) Act_Dr,SUM(NVL(vv.CR,0)) Act_Cr
+            from voucher_view vv
+            where   voucher_date between '02-JUN-2021' AND '31-JUL-2021'
+                  And Upper(Post_status)='POSTED'
+                  And Comp_id=1
+            group by COA_ACCOUNT_NO,COA_NAME
+            UNION ALL
+          select COA_ACCOUNT_NO,COA_NAME,nvl(sum(opening_dr),0)OPEN_DR,nvl(sum(opening_cr),0) open_CR ,0 act_dr,0 act_cr
+          from opening_balance ob,coa 
+          where ob.COA4=coa.id and ob.status=1 and ob.comp_id=1 and exists (
+          select null from fiscal_year fy where FY.ID=OB.FY_ID AND FY.ID=1)
+          group by COA_ACCOUNT_NO,COA_NAME
+          union all
+          select COA_ACCOUNT_NO,COA_NAME,
+                             SUM(NVL(vv.DR,0)) open_Dr,SUM(NVL(vv.CR,0)) open_Cr,0 act_dr,0 act_cr
+          from voucher_view vv
+          where  VV.VOUCHER_DATE<'02-JUN-2021' and comp_id=1 and exists (
+          select null from fiscal_year fy where VV.VOUCHER_DATE between FY.FROM_DATE and FY.TO_DATE AND FY.ID=1)
+          and upper(post_status)='POSTED'
+          GROUP BY  COA_ACCOUNT_NO,COA_NAME
+       ) group by COA_ACCOUNT_NO, COA_NAME)
+       select SEQ, COMP_NAME, AC_NO, AC_NAME, OPEN_DR, OPEN_CR, ACT_DR, ACT_CR,(case when CL_DR-CL_CR>0 then CL_DR-CL_CR else 0 end) Bal_Dr
+       ,-(case when CL_DR-CL_CR<0 then CL_DR-CL_CR else 0 end) Bal_Cr
+       from (
+SELECT SEQ,c.comp_name,AC_NO, ac_NAME, sum(OPEN_DR) open_dr, sum(OPEN_CR) open_cr, sum(ACT_DR) ACT_DR,sum(ACT_CR) ACT_CR,
+sum(OPEN_DR)+sum(ACT_DR) Cl_Dr,sum(OPEN_cR)+sum(ACT_cR) Cl_Cr
+FROM ACTIVITY ACT,AC C
+WHERE c.AC_NO=SUBSTR(ACT.COA_ACCOUNT_NO,1,LENGTH(AC_NO))
+group by SEQ,c.comp_name,AC_NO, ac_NAME
+) 
+ order by seq
