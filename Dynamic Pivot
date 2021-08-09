@@ -1,0 +1,16 @@
+procedure dynamic_pview (pview out sys_refcursor) is
+v_Cols varchar2(4000);
+begin
+select Wm_Concat(''''||DDD||''' AS "'||DDD||'"' ) D INTO v_Cols
+from(
+select distinct ddd from PIVOT_TEST
+);
+
+open pview for
+SELECT *
+FROM (SELECT DDD, DESCR, VAL
+FROM PIVOT_TEST)
+Pivot(SUM(VAL)
+FOR DD IN(' || v_Cols || '));
+
+end;
